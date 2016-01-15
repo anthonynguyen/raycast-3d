@@ -1,4 +1,5 @@
 #include <cmath>
+#include <ctime>
 #include <iostream>
 
 #include <SDL2/SDL.h>
@@ -14,6 +15,9 @@
 
 #define MAXDIST 7
 
+#define ROTATE_VEL 2.5
+#define MOVE_VEL   2.0
+
 typedef struct {
 	double x, y;
 } Vector;
@@ -21,6 +25,8 @@ typedef struct {
 SDL_Window *window = NULL;
 SDL_Surface *surface = NULL;
 SDL_Renderer *renderer = NULL;
+
+clock_t last_frame_time, frame_time;
 
 int world[WORLD_Y][WORLD_X] = {
 	{1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
@@ -93,9 +99,9 @@ void rotate(Vector *v1, Vector *v2, double angle) {
 	v2->y = ix * sin(angle) + iy * cos(angle);
 }
 
-bool is_solid(double x, double y) {
-	int mx = (int)x;
-	int my = (int)y;
+bool is_solid(Vector *p) {
+	int mx = (int)p->x;
+	int my = (int)p->y;
 
 	if (mx < WORLD_X && my < WORLD_Y)
 		return !!world[my][mx];
@@ -109,7 +115,7 @@ void draw_slice(int i, double dist, int side) {
 	if (dist > MAXDIST)
 		return;
 
-	if (side)
+	if (!side)
 		SDL_SetRenderDrawColor(renderer, 90, 220, 20, SDL_ALPHA_OPAQUE);
 	else
 		SDL_SetRenderDrawColor(renderer, 60, 190, 0, SDL_ALPHA_OPAQUE);
@@ -139,13 +145,44 @@ int main(int argc, char *argv[]) {
 	Vector next, step, rdelta;
 	double dist;
 	double anglestep = FOV / SCREEN_WIDTH;
-	int i;
-	int side;
+	int i, side;
+	double vrotate, vmove;
+	const Uint8 *keys;
 
 	while (!die) {
+		last_frame_time = frame_time;
+		frame_time = clock();
+		vrotate = (double)(frame_time - last_frame_time) / CLOCKS_PER_SEC * ROTATE_VEL;
+		vmove   = (double)(frame_time - last_frame_time) / CLOCKS_PER_SEC * MOVE_VEL;
+
+		keys = SDL_GetKeyboardState(NULL);
+
+		if (keys[SDL_SCANCODE_W]) {
+			ppos.x += pdir.x * vmove;
+			ppos.y += pdir.y * vmove;
+		}
+
+		if (keys[SDL_SCANCODE_S]) {
+			ppos.x -= pdir.x * vmove;
+			ppos.y -= pdir.y * vmove;
+		}
+
+		if (keys[SDL_SCANCODE_A]) {
+			rotate(&pdir, &pdir, vrotate);
+		}
+
+		if (keys[SDL_SCANCODE_D]) {
+			rotate(&pdir, &pdir, -vrotate);
+		}
+
 		while (SDL_PollEvent(&ev) != 0) {
-			if (ev.type == SDL_QUIT || ev.type == SDL_KEYDOWN)
+			if (ev.type == SDL_QUIT || ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE)
 				die = true;
+
+			if (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_RETURN) {
+				std::cout << "Position: (" << ppos.x << ", " << ppos.y << ")" << std::endl;
+				std::cout << "Direction: (" << pdir.x << ", " << pdir.y << ")" << std::endl;
+			}
 		}
 
 		draw_bg();
@@ -156,8 +193,8 @@ int main(int argc, char *argv[]) {
 			rpos.x = (int)ppos.x;
 			rpos.y = (int)ppos.y;
 
-			rdelta.x = sqrt((rdir.y * rdir.y) / (rdir.x * rdir.x) + 1);
-			rdelta.y = sqrt((rdir.x * rdir.x) / (rdir.y * rdir.y) + 1);
+			rdelta.x = sqrt((rdir.y / rdir.x) * (rdir.y / rdir.x) + 1);
+			rdelta.y = sqrt((rdir.x / rdir.y) * (rdir.x / rdir.y) + 1);
 
 			if (rdir.x > 0) {
 				step.x = 1;
@@ -175,7 +212,7 @@ int main(int argc, char *argv[]) {
 				next.y = rdelta.y * (ppos.y - (int)(ppos.y));
 			}
 
-			while (!is_solid(rpos.x, rpos.y)) {
+			while (!is_solid(&rpos)) {
 				if (next.x < next.y) {
 					next.x += rdelta.x;
 					rpos.x += step.x;
@@ -187,31 +224,23 @@ int main(int argc, char *argv[]) {
 				}
 			}
 
-			// if (side) {
-			// 	rpos.x = next.x + rdelta.x;
-			// 	rpos.y = next.y - rdelta.y;
-			// } else {
-			// 	rpos.x = next.x - rdelta.x;
-			// 	rpos.y = next.y + rdelta.y;
-			// }
+			if (side)
+				rpos.x = ppos.x + rdir.x * (rpos.y - ppos.y) / rdir.y;
+			else
+				rpos.y = ppos.y + rdir.y * (rpos.x - ppos.x) / rdir.x;
 			
 			dist = sqrt((rpos.x - ppos.x) * (rpos.x - ppos.x) + (rpos.y - ppos.y) * (rpos.y - ppos.y));
 
-			std::cout << i << ": " << dist << ", " << side << std::endl;
-			std::cout << rpos.x << ", " << rpos.y << std::endl;
-			std::cout << next.x - rdelta.x << ", " << next.y + rdelta.y << std::endl;
 			draw_slice(i, dist, side);
 
 			rotate(&rdir, &rdir, -anglestep);
-			//die = 1;
 		}
 
-		//die = 1;
-
-		rotate(&pdir, &pdir, 0.002);
-		//std::cout << atan2(pdir.y, pdir.x)*180/M_PI << std::endl;
+		if (is_solid(&ppos))
+			std::cout << "Stuck in solid (" << (int)ppos.x << ", " << (int)ppos.y << ")" << std::endl;
 
 		SDL_UpdateWindowSurface(window);
+		last_frame_time = clock();
 	}
 
 	close();
