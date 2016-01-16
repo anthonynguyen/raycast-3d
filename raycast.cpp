@@ -18,6 +18,10 @@
 #define ROTATE_VEL 3.5
 #define MOVE_VEL   3.5
 
+typedef enum {
+	VERTICAL, HORIZONTAL
+} Orientation;
+
 typedef struct {
 	double x, y;
 } Vector;
@@ -52,7 +56,7 @@ int world[WORLD_Y][WORLD_X] = {
 
 	{1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,},
 	{1,1,1,1,1,1,1,1,0,0,0,0,2,2,2,2,2,2,2,1,},
-	{1,1,1,1,1,1,1,1,0,0,0,0,3,2,2,2,2,2,2,2,},
+	{1,1,1,1,1,1,1,1,0,0,0,0,2,2,2,2,2,2,2,2,},
 	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,},
 	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,},
 	{1,2,2,2,2,2,2,2,0,0,0,0,1,1,1,1,1,1,1,1,},
@@ -131,7 +135,7 @@ bool is_solid(double x, double y) {
 	return true;
 }
 
-void draw_slice(int i, double dist, int side, int colour) {
+void draw_slice(int i, double dist, Orientation side, int colour) {
 	static SDL_Rect slice = {0, 0, 1, 1};
 	static Uint8 colours[4][4] = {
 		{0, 0, 0, 0},
@@ -141,12 +145,12 @@ void draw_slice(int i, double dist, int side, int colour) {
 	};
 
 	Uint8 r = colours[colour][0], g = colours[colour][1], b = colours[colour][2], a = colours[colour][3];
-	double shade = 100.0;
+	double shade = 50.0;
 
 	if (dist > MAXDIST)
 		return;
 
-	if (side) {
+	if (side == HORIZONTAL) {
 		r *= 0.8;
 		g *= 0.8;
 		b *= 0.8;
@@ -176,13 +180,15 @@ int main(int argc, char *argv[]) {
 	bool die = false;
 	SDL_Event ev;
 
-	Vector ppos = {10.0, 2.5}, rpos, mpos;
+	Vector ppos = {10.0, 1.5}, rpos;
 	Vector pdir = {0, 1.0}, rdir; // pdir: player direction, rdir: ray direction
 
-	Vector next, step, rdelta;
+	Vector next, step, rslope;
+	Orientation wall = VERTICAL;
 	double dist;
 	double anglestep = FOV / SCREEN_WIDTH;
-	int i, side = 0;
+	int rmposx, rmposy;
+	int i;
 	double vrotate, vmove;
 	const Uint8 *keys;
 
@@ -231,57 +237,53 @@ int main(int argc, char *argv[]) {
 		rotate(&pdir, &rdir, FOV / 2);
 
 		for (i = 0; i < SCREEN_WIDTH; i++) {
-			rpos.x = (int)ppos.x;
-			rpos.y = (int)ppos.y;
-
-			rdelta.x = sqrt((rdir.y / rdir.x) * (rdir.y / rdir.x) + 1);
-			rdelta.y = sqrt((rdir.x / rdir.y) * (rdir.x / rdir.y) + 1);
+			rpos = ppos;
+			rmposx = (int)rpos.x;
+			rmposy = (int)rpos.y;
 
 			if (rdir.x > 0) {
 				step.x = 1;
-				next.x = rdelta.x * ((int)(ppos.x + 1) - ppos.x);
 			} else {
 				step.x = -1;
-				next.x = rdelta.x * (ppos.x - (int)(ppos.x));
 			}
 
 			if (rdir.y > 0) {
 				step.y = 1;
-				next.y = rdelta.y * ((int)(ppos.y + 1) - ppos.y);
 			} else {
 				step.y = -1;
-				next.y = rdelta.y * (ppos.y - (int)(ppos.y));
 			}
 
-			while (!is_solid(rpos.x, rpos.y)) {
-				if (next.x < next.y) {
-					next.x += rdelta.x;
-					rpos.x += step.x;
-					side = 0;
+			rslope.x = rdir.y / rdir.x;
+			rslope.y = rdir.x / rdir.y;
+
+			while (!is_solid(rmposx, rmposy)) {
+				next.x = rpos.x + ((rmposy + step.y) - rpos.y) * rslope.y; // if we move to the next y, what is our x?
+				next.y = rpos.y + ((rmposx + step.x) - rpos.x) * rslope.x;
+
+				if (next.x < (rmposx + step.x)) { // y is closer
+					rmposy += step.y;
+					rpos.x = next.x;
+					rpos.y = rmposy;
+
+					wall = VERTICAL;
 				} else {
-					next.y += rdelta.y;
-					rpos.y += step.y;
-					side = 1;
+					rmposx += step.x;
+					rpos.x = rmposx;
+					rpos.y = next.y;
+
+					wall = HORIZONTAL;
 				}
 			}
 
-			mpos.x = rpos.x;
-			mpos.y = rpos.y;
-
-			if (side)
-				rpos.x = ppos.x + rdir.x * (rpos.y - ppos.y) / rdir.y;
-			else
-				rpos.y = ppos.y + rdir.y * (rpos.x - ppos.x) / rdir.x;
-			
 			dist = sqrt((rpos.x - ppos.x) * (rpos.x - ppos.x) + (rpos.y - ppos.y) * (rpos.y - ppos.y));
-
-			draw_slice(i, dist, side, world[(int)mpos.y][(int)mpos.x]);
-
+			draw_slice(i, dist, wall, world[rmposy][rmposx]);
 			rotate(&rdir, &rdir, -anglestep);
 		}
 
-		if (is_solid(ppos.x, ppos.y))
+		if (is_solid(ppos.x, ppos.y)) {
 			std::cout << "Stuck in solid (" << (int)ppos.x << ", " << (int)ppos.y << ")" << std::endl;
+			die = true;
+		}
 
 		SDL_UpdateWindowSurface(window);
 		last_frame_time = clock();
