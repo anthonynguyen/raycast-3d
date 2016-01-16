@@ -217,10 +217,10 @@ int main(int argc, char *argv[]) {
 		}
 
 		if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT])
-			rotate(&pdir, &pdir, vrotate);
+			rotate(&pdir, &pdir, -vrotate);
 
 		if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT])
-			rotate(&pdir, &pdir, -vrotate);
+			rotate(&pdir, &pdir, vrotate);
 
 		while (SDL_PollEvent(&ev) != 0) {
 			if (ev.type == SDL_QUIT || (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE))
@@ -234,7 +234,7 @@ int main(int argc, char *argv[]) {
 
 		draw_bg();
 
-		rotate(&pdir, &rdir, FOV / 2);
+		rotate(&pdir, &rdir, -FOV / 2);
 
 		for (i = 0; i < SCREEN_WIDTH; i++) {
 			rpos = ppos;
@@ -277,7 +277,7 @@ int main(int argc, char *argv[]) {
 
 			dist = sqrt((rpos.x - ppos.x) * (rpos.x - ppos.x) + (rpos.y - ppos.y) * (rpos.y - ppos.y));
 			draw_slice(i, dist, wall, world[rmposy][rmposx]);
-			rotate(&rdir, &rdir, -anglestep);
+			rotate(&rdir, &rdir, anglestep);
 		}
 
 		if (is_solid(ppos.x, ppos.y)) {
